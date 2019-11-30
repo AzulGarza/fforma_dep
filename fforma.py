@@ -7,6 +7,7 @@ import xgboost as xgb
 from sklearn.multioutput import MultiOutputRegressor
 from scipy.special import softmax
 import copy
+import multiprocessing as mp
 
 class FForma:
     def __init__(self):
@@ -14,14 +15,21 @@ class FForma:
     
     # Eval functions
     def smape(self, ts, ts_hat):
+        # Needed condition
+        assert ts.shape == ts_hat.shape, "ts must have the same size of ts_hat"
+        
         num = np.abs(ts-ts_hat)
         den = np.abs(ts) + np.abs(ts_hat)
         return 2*np.mean(num/den)
     
     def mase(self, ts_train, ts_test, ts_hat):
+        # Needed condition
+        assert ts_test.shape == ts_hat.shape, "ts must have the same size of ts_hat"
+        
         den = np.abs(np.diff(ts_train)).sum()/(len(ts_train) -1)
         return np.abs(ts_test - ts_hat).mean()/den
-
+        
+    # Train functions
     def train_basic(self, model, ts, frcy):
         this_model = copy.deepcopy(model)
         if 'frcy' in model.fit.__code__.co_varnames:
@@ -51,7 +59,7 @@ class FForma:
         ]
         
         return y_hat
-    
+    # Auxiliars for parallel calculate owa
     def _particular_error(self, tuple_test_pred, fun):
         ts_test_list, ts_pred_list = tuple_test_pred
         list_error = [fun(ts_test_list, pred) for pred in ts_pred_list]
@@ -61,11 +69,17 @@ class FForma:
     def _particular_error_smape(self, tuple_test_pred):
         return self._particular_error(tuple_test_pred, self.smape)
     
+    def _simple_mase(self, ts_test, ts_hat):
+        return np.abs(ts_test - ts_hat).mean()
     
-    def _particular_error_mase(self, tuple_test_pred):
-        return self._particular_error(tuple_test_pred, self.mase)
+    def _particular_error_simple_mase(self, tuple_test_pred):
+        return self._particular_error(tuple_test_pred, self._simple_mase)  
     
-    def calculate_owa(self, ts_test_list, ts_hat_list, h, ts_train_list, frcy, parallel=True, threads=None):
+    def calculate_owa(self, ts_test_list, ts_hat_list, h, ts_train_list, frcy, parallel=True, threads=None, mult_preds=False):
+        
+        #To calculate owa correctly when ts_hat_list contains a single prediction
+        if not mult_preds:
+            ts_hat_list = [[ts] for ts in ts_hat_list]
         
         # init parallel
         if parallel and threads is None:
@@ -76,8 +90,11 @@ class FForma:
                 
                 ts_test_hat_list = zip(ts_test_list, ts_hat_list)
 
-                smape_errors = pool.map(self._particular_error_smape, ts_test_hat_list)
-                mase_errors = pool.map(self._particular_error_mase, ts_test_hat_list)
+                smape_errors = np.array(pool.map(self._particular_error_smape, ts_test_hat_list))
+                mase_errors = np.array(pool.map(self._particular_error_simple_mase, ts_test_hat_list))
+                den_mase = np.array([np.abs(np.diff(ts)).sum()/(len(ts) -1) for ts in ts_train_list])
+                mase_errors = mase_errors/den_mase
+
                 
                  ##### NAIVE2
                 # Training naive2
@@ -87,15 +104,15 @@ class FForma:
                 mean_smape_naive2 = np.array([
                      self.smape(ts_test, ts_pred) for ts_test, ts_pred in zip(ts_test_list, ts_hat_naive2)
                 ]).mean()
+                
+                print(mean_smape_naive2)
 
                 # MASE of naive2
                 mean_mase_naive2 = np.array([
                      self.mase(ts_train, ts_test, ts_pred) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_naive2)
                 ]).mean()
-
-                # Contribution to the owa error
-                contribution_to_owa = (smape_errors/mean_smape_naive2) + (mase_errors/mean_mase_naive2)
-                contribution_to_owa = contribution_to_owa/2
+                
+                print(mean_mase_naive2)
                 
         else:
             
@@ -104,14 +121,15 @@ class FForma:
                     [self.smape(ts_test, pred) for pred in ts_pred]
                 ) for ts_test, ts_pred in zip(ts_test_list, ts_hat_list)
             ])
-
+            
+            
             # Mase
             mase_errors = np.array([
                 np.array(
                     [self.mase(ts_train, ts_test, pred) for pred in ts_pred]
                 ) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_list)
             ])
-
+            
             ##### NAIVE2
             # Training naive2
             ts_hat_naive2 = [Naive2().fit(ts, frcy).predict(h) for ts in ts_train_list]
@@ -120,15 +138,15 @@ class FForma:
             mean_smape_naive2 = np.array([
                  self.smape(ts_test, ts_pred) for ts_test, ts_pred in zip(ts_test_list, ts_hat_naive2)
             ]).mean()
-
+            
             # MASE of naive2
             mean_mase_naive2 = np.array([
                  self.mase(ts_train, ts_test, ts_pred) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_naive2)
             ]).mean()
-
-            # Contribution to the owa error
-            contribution_to_owa = (smape_errors/mean_smape_naive2) + (mase_errors/mean_mase_naive2)
-            contribution_to_owa = contribution_to_owa/2
+            
+        # Contribution to the owa error
+        contribution_to_owa = (smape_errors/mean_smape_naive2) + (mase_errors/mean_mase_naive2)
+        contribution_to_owa = contribution_to_owa/2
         
         return (contribution_to_owa.mean(), contribution_to_owa)
         
@@ -137,7 +155,7 @@ class FForma:
         ts_features = tsfeatures(self.ts_list, self.frcy, parallel=parallel)
         
         # Contribution to the owa error
-        (_, contribution_to_owa) = self.calculate_owa(ts_test_list, ts_hat_list, self.h, self.ts_list, self.frcy, parallel=False)
+        (_, contribution_to_owa) = self.calculate_owa(ts_test_list, ts_hat_list, self.h, self.ts_list, self.frcy, parallel=False, mult_preds=True)
         
         return (ts_features, contribution_to_owa.argmin(axis=1), contribution_to_owa)
     
