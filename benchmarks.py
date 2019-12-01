@@ -4,6 +4,8 @@ from numpy.random import seed
 seed(42)
 import pandas as pd
 import gc
+from statsmodels.tsa.api import ExponentialSmoothing
+
 
 #============================
 # UTILITIES
@@ -198,6 +200,27 @@ class RandomWalkDrift:
         naive = np.array(self.naive * h)
         drift = self.drift*np.array(range(1,h+1))
         y_hat = naive + drift
+        return y_hat
+    
+#===============================
+# ADDITIONAL MODELS
+#==============================
+    
+class ETS:
+    """
+    ETS Wrapper:
+    """
+    def __init__(self):
+        pass
+    
+    def fit(self, ts_init, frcy):
+        self.frcy = frcy
+        self.ets = ExponentialSmoothing(ts_init, trend='add', seasonal='add', seasonal_periods=self.frcy).fit()
+                
+        return self
+    
+    def predict(self, h):     
+        y_hat = self.ets.forecast(steps=h)
         return y_hat
 
 
