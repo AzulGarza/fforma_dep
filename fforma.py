@@ -151,11 +151,11 @@ class FForma:
         return (contribution_to_owa.mean(), contribution_to_owa)
         
     
-    def prepare_to_train(self, ts_test_list, ts_hat_list, parallel=True):
-        ts_features = tsfeatures(self.ts_list, self.frcy, parallel=parallel)
+    def prepare_to_train(self, ts_list, ts_test_list, ts_hat_list, h, frcy, parallel=True):
+        ts_features = tsfeatures(ts_list, frcy, parallel=parallel)
         
         # Contribution to the owa error
-        (_, contribution_to_owa) = self.calculate_owa(ts_test_list, ts_hat_list, self.h, self.ts_list, self.frcy, parallel=False, mult_preds=True)
+        (_, contribution_to_owa) = self.calculate_owa(ts_test_list, ts_hat_list, h, ts_list, frcy, parallel=False, mult_preds=True)
         
         return (ts_features, contribution_to_owa.argmin(axis=1), contribution_to_owa)
     
@@ -187,13 +187,14 @@ class FForma:
         #print(preds)
         
         # Preparing data for xgb training
-        self.X_train, self.y_train, self.contribution_to_owa = training.prepare_to_train(ts_test_list, preds)
+        self.X_train, self.y_train, self.contribution_to_owa = training.prepare_to_train(ts_train_list, ts_test_list, preds, val_periods, frcy)
+        self.X_val, self.y_val, _ = training.prepare_to_train(ts_train_list, ts_test_list, preds, val_periods, frcy)
         
-        # For test purposes
-        self.X_train = self.X_train
         
         # Training xgboost
         xgb_mat = xgb.DMatrix(data = self.X_train, label=self.y_train)
+        xgb_mat = xgb.DMatrix(data = self.X_val, label=self.y_val)
+        
         
         param = {
             'max_depth': 3,  # the maximum depth of each tree
