@@ -211,6 +211,8 @@ class FForma:
         
         # Optimal weights
         self.ts_feat = tsfeatures(ts_list, frcy, parallel=parallel)
+        self.ts_feat = self.ts_feat[self.xgb.feature_names]
+        
         self.opt_weights = self.xgb.predict(xgb.DMatrix(self.ts_feat))
         
         return self
@@ -224,6 +226,7 @@ class FForma:
         if not (ts_predict is None):
             preds = self.train_basic_models(self.models, ts_predict, frcy).predict_basic_models(h)
             ts_feat = tsfeatures(ts_predict, frcy, parallel=parallel)
+            ts_feat = ts_feat[self.xgb.feature_names]
             opt_weights = self.xgb.predict(xgb.DMatrix(ts_feat))
             final_preds = final_preds = np.array([np.matmul(pred.T, opt_weight) for pred, opt_weight in zip(preds, opt_weights)])
         else:
