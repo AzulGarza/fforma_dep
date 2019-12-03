@@ -44,9 +44,6 @@ class FForma:
         """
         basic_models: List of models
         """
-        self.models = basic_models
-        self.ts_list = ts_list
-        self.frcy = frcy
         self.fitted_models = [
             np.array([self.train_basic(model, ts, frcy) for model in basic_models]) for ts in ts_list
         ] 
@@ -54,7 +51,6 @@ class FForma:
         return self
         
     def predict_basic_models(self, h):
-        self.h = h
         y_hat = [
             np.array([model.predict(h) for model in idts]) for idts in self.fitted_models
         ]
@@ -192,6 +188,11 @@ class FForma:
         
     def train(self, models, ts_list, frcy, val_periods=7, parallel=True, threads=None):
         
+        # Defining self values
+        self.models = basic_models
+        self.ts_list = ts_list
+        self.frcy = frcy
+        
         # Creating train and test sets
         ts_train_list = [ts[:(len(ts)-val_periods)] for ts in ts_list]
         ts_test_list = [ts[(len(ts)-val_periods):] for ts in ts_list]
@@ -209,8 +210,8 @@ class FForma:
         
         
         # Training xgboost
-        xgb_mat = xgb.DMatrix(data = X_train_xgb, label=indices_train)
-        xgb_mat_val = xgb.DMatrix(data = X_val, label=indices_val)
+        xgb_mat = xgb.DMatrix(data=X_train_xgb, label=indices_train)
+        xgb_mat_val = xgb.DMatrix(data=X_val, label=indices_val)
         
         # nthreads params
         if threads is None:
@@ -253,6 +254,7 @@ class FForma:
         For each series in ts_list returns predictions
         ts_predict: list of series to predict
         """
+        self.h = h
         # Getting predictions for ts_predict
         if not (ts_predict is None):
             preds = self.train_basic_models(self.models, ts_predict, frcy).predict_basic_models(h)
