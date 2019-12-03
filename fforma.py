@@ -190,7 +190,7 @@ class FForma:
         return 'FFORMA-loss', fforma_loss
 
         
-    def train(self, models, ts_list, frcy, val_periods=7, parallel=True):
+    def train(self, models, ts_list, frcy, val_periods=7, parallel=True, threads=None):
         
         # Creating train and test sets
         ts_train_list = [ts[:(len(ts)-val_periods)] for ts in ts_list]
@@ -212,6 +212,10 @@ class FForma:
         xgb_mat = xgb.DMatrix(data = X_train_xgb, label=indices_train)
         xgb_mat_val = xgb.DMatrix(data = X_val, label=indices_val)
         
+        # nthreads params
+        if threads is None:
+            threads = mp.cpu_count()
+        
         
         param = {
             'max_depth': 3,  # the maximum depth of each tree
@@ -219,7 +223,7 @@ class FForma:
             'silent': 1,  # logging mode - quiet
             'objective': 'multi:softprob',  # error evaluation for multiclass training
             'num_class': len(self.models),
-            'nthread': 10,
+            'nthread': threads,
             'disable_default_eval_metric': 1
         }
         
