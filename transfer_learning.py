@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore")
 
 print("Reading and processing data")
 
-monthly = pd.read_csv('data/data_m4/Monthly-train.csv').set_index('V1')
+monthly = pd.read_csv('data/data_m4/Monthly-train.csv', nrows=4000).set_index('V1')
 
 
 # In[3]:
@@ -40,21 +40,22 @@ print(f"Total series: {n_series}")
 
 # In[5]:
 
-print("Making chunks of data")
-size_chunks = (n_series*np.arange(10, 50, 10)/100).round().astype(int).tolist()
-size_chunks.insert(0, 1000)
+#print("Making chunks of data")
+#size_chunks = (n_series*np.arange(10, 50, 10)/100).round().astype(int).tolist()
+#size_chunks.insert(0, 1000)
 
 
 # In[6]:
 
 
-print(size_chunks)
+#print(size_chunks)
 
 
 # In[7]:
 
-print("Generating samples of data")
-chunks_data = [list(np.random.choice(list_series, size, replace=False)) for size in size_chunks]
+print("Generating samples of data") 
+size_chunks =  [100, 1000, 2000, 3000, 4000]
+chunks_data = [list_series[:n] for n in size_chunks]
 
 
 # ### Training models 

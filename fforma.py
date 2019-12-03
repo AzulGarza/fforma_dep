@@ -165,13 +165,14 @@ class FForma:
         '''
         Compute...
         '''
-        y = dtrain.get_label()
+        y = dtrain.get_label().astype(int)
+        #print(y)
         n_train = len(y)
         #print(predt.shape)
         preds_transformed = np.array([softmax(row) for row in predt])
-        weighted_avg_loss_func = (preds_transformed*self.contribution_to_owa).sum(axis=1).reshape((n_train, 1))   
-        grad = preds_transformed*(self.contribution_to_owa - weighted_avg_loss_func)
-        hess = self.contribution_to_owa*preds_transformed*(1.0-preds_transformed) - grad*preds_transformed
+        weighted_avg_loss_func = (preds_transformed*self.contribution_to_owa[y, :]).sum(axis=1).reshape((n_train, 1))   
+        grad = preds_transformed*(self.contribution_to_owa[y, :] - weighted_avg_loss_func)
+        hess = self.contribution_to_owa[y,:]*preds_transformed*(1.0-preds_transformed) - grad*preds_transformed
         #print(grad)
         return grad.reshape(-1, 1), hess.reshape(-1, 1)
     
@@ -179,11 +180,11 @@ class FForma:
         '''
         Compute...
         '''
-        #y = dtrain.get_label()
-        n_train = dtrain.num_rows()
+        y = dtrain.get_label().astype(int)
+        n_train = len(y)
         #print(predt.shape)
         preds_transformed = np.array([softmax(row) for row in predt])
-        weighted_avg_loss_func = (preds_transformed*self.contribution_to_owa).sum(axis=1).reshape((n_train, 1))   
+        weighted_avg_loss_func = (preds_transformed*self.contribution_to_owa[y, :]).sum(axis=1).reshape((n_train, 1))   
         fforma_loss = weighted_avg_loss_func.sum()
         #print(grad)
         return 'FFORMA-loss', fforma_loss
@@ -203,12 +204,13 @@ class FForma:
         # Preparing data for xgb training
         self.X_train, self.y_train, self.contribution_to_owa = training.prepare_to_train(ts_train_list, ts_test_list, preds, val_periods, frcy)
         #self.X_val =  tsfeatures(ts_test_list, frcy, parallel=parallel)
-        X_train_xgb, 
+        indexes = np.arange(self.X_train.shape[0])
+        X_train_xgb, X_val, y_train_xgb, y_val, indices_train, indices_val = train_test_split(self.X_train, self.y_train, indexes)
         
         
         # Training xgboost
-        xgb_mat = xgb.DMatrix(data = self.X_train, label=self.y_train)
-        xgb_mat_val = xgb.DMatrix(data = self.X_val, label=self.y_val)
+        xgb_mat = xgb.DMatrix(data = X_train_xgb, label=indices_train)
+        xgb_mat_val = xgb.DMatrix(data = X_val, label=indices_val)
         
         
         param = {
