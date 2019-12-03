@@ -8,6 +8,7 @@ from sklearn.multioutput import MultiOutputRegressor
 from scipy.special import softmax
 import copy
 import multiprocessing as mp
+from sklearn.model_selection import train_test_split
 
 class FForma:
     def __init__(self):
@@ -173,6 +174,19 @@ class FForma:
         hess = self.contribution_to_owa*preds_transformed*(1.0-preds_transformed) - grad*preds_transformed
         #print(grad)
         return grad.reshape(-1, 1), hess.reshape(-1, 1)
+    
+    def fforma_loss(self, predt: np.ndarray, dtrain: xgb.DMatrix) -> (str, float):
+        '''
+        Compute...
+        '''
+        #y = dtrain.get_label()
+        n_train = dtrain.num_rows()
+        #print(predt.shape)
+        preds_transformed = np.array([softmax(row) for row in predt])
+        weighted_avg_loss_func = (preds_transformed*self.contribution_to_owa).sum(axis=1).reshape((n_train, 1))   
+        fforma_loss = weighted_avg_loss_func.sum()
+        #print(grad)
+        return 'FFORMA-loss', fforma_loss
 
         
     def train(self, models, ts_list, frcy, val_periods=7, parallel=True):
@@ -188,12 +202,13 @@ class FForma:
         
         # Preparing data for xgb training
         self.X_train, self.y_train, self.contribution_to_owa = training.prepare_to_train(ts_train_list, ts_test_list, preds, val_periods, frcy)
-        self.X_val, self.y_val, _ = training.prepare_to_train(ts_train_list, ts_test_list, preds, val_periods, frcy)
+        #self.X_val =  tsfeatures(ts_test_list, frcy, parallel=parallel)
+        X_train_xgb, 
         
         
         # Training xgboost
         xgb_mat = xgb.DMatrix(data = self.X_train, label=self.y_train)
-        xgb_mat = xgb.DMatrix(data = self.X_val, label=self.y_val)
+        xgb_mat_val = xgb.DMatrix(data = self.X_val, label=self.y_val)
         
         
         param = {
@@ -202,10 +217,19 @@ class FForma:
             'silent': 1,  # logging mode - quiet
             'objective': 'multi:softprob',  # error evaluation for multiclass training
             'num_class': len(self.models),
-            'nthread': 10
+            'nthread': 10,
+            'disable_default_eval_metric': 1
         }
         
-        self.xgb = xgb.train(params=param, dtrain=xgb_mat, obj=self.error_softmax_obj, num_boost_round=10)
+        self.xgb = xgb.train(
+            params=param, 
+            dtrain=xgb_mat, 
+            obj=self.error_softmax_obj, 
+            num_boost_round=100,
+            feval=self.fforma_loss,
+            evals=[(xgb_mat, 'dtrain'), (xgb_mat_val, 'dval')],
+            early_stopping_rounds=10
+        )
         
         # Training models with all data
         self.fitted_models = self.train_basic_models(models, ts_list, frcy).fitted_models
