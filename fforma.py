@@ -261,7 +261,7 @@ class FForma:
             ts_feat = tsfeatures(ts_predict, frcy, parallel=parallel)
             ts_feat = ts_feat[self.xgb.feature_names]
             opt_weights = self.xgb.predict(xgb.DMatrix(ts_feat))
-            final_preds = final_preds = np.array([np.matmul(pred.T, opt_weight) for pred, opt_weight in zip(preds, opt_weights)])
+            final_preds = np.array([np.matmul(pred.T, opt_weight) for pred, opt_weight in zip(preds, opt_weights)])
         else:
             preds = np.array(self.predict_basic_models(h))
             #print(preds.shape)
