@@ -27,11 +27,14 @@ class FForma:
         den = np.abs(ts) + np.abs(ts_hat)
         return 2*np.mean(num/den)
 
-    def mase(self, ts_train, ts_test, ts_hat):
+    def mase(self, ts_train, ts_test, ts_hat, frcy):
         # Needed condition
         assert ts_test.shape == ts_hat.shape, "ts must have the same size of ts_hat"
 
-        den = np.abs(np.diff(ts_train)).sum()/(len(ts_train) -1)
+        rolled_train = np.roll(ts_train, frcy)
+        diff_train = np.abs(ts_train - rolled_train)
+        den = diff_train[frcy:].mean()
+
         return np.abs(ts_test - ts_hat).mean()/den
 
     # Train functions
