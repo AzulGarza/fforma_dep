@@ -5,6 +5,9 @@ seed(42)
 import pandas as pd
 import gc
 from statsmodels.tsa.api import ExponentialSmoothing
+from tbats import TBATS, BATS
+import pmdarima as pm
+
 
 
 #============================
@@ -200,6 +203,7 @@ class RandomWalkDrift:
         naive = np.array(self.naive * h)
         drift = self.drift*np.array(range(1,h+1))
         y_hat = naive + drift
+        y_hat[y_hat<0] = 0
         return y_hat
     
 #===============================
@@ -215,13 +219,85 @@ class ETS:
     
     def fit(self, ts_init, frcy):
         self.frcy = frcy
-        self.ets = ExponentialSmoothing(ts_init, trend='add', seasonal='add', seasonal_periods=self.frcy).fit()
+        self.ets = ExponentialSmoothing(
+            ts_init, 
+            #trend='add', 
+            seasonal='add',
+            #damped = True,
+            seasonal_periods=self.frcy
+        ).fit()
+        
                 
         return self
     
     def predict(self, h):     
         y_hat = self.ets.forecast(steps=h)
+        
+        y_hat[y_hat<0] = 0
+        
+        return y_hat
+
+class TBATSFF:
+    """
+    TBATS wrapper
+    """
+    def __init__(self):
+        pass
+    
+    def fit(self, ts_init, frcy):
+        self.frcy = frcy
+        self.tbats = TBATS(seasonal_periods=[self.frcy, 7*self.frcy], use_arma_errors=False).fit(ts_init)
+        
+        return self
+    
+    def predict(self, h):
+        y_hat = self.tbats.forecast(steps=h)
+
         return y_hat
 
 
-
+class AutoArima:
+    """
+    AUTOARIMA wrapper
+    """
+    def __init__(self):
+        pass
+    
+    def fit(self, ts_init, frcy):
+        self.frcy = frcy
+        self.arima = pm.auto_arima(
+            ts_init,
+            m=self.frcy,
+            d=1,
+            D=1,
+            error_action='ignore',  
+            suppress_warnings=True, 
+            stepwise=True
+        )
+        
+        return self
+    
+    def predict(self, h):
+        y_hat = self.arima.predict(nperiods=h)
+        
+        return y_hat
+    
+class NonZeroMean:
+    """
+    Non Zero Mean
+    """
+    def __init__(self):
+        pass
+    
+    def fit(self, ts_init):
+        self.mean = [ts_init[ts_init>0].mean()]
+        
+        return self
+    
+    def predict(self, h):
+        y_hat = np.array(self.mean*h)
+        
+        y_hat[np.isnan(y_hat)] = 0
+        y_hat[y_hat<0] = 0
+        
+        return y_hat

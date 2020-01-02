@@ -24,7 +24,7 @@ class FForma:
         assert ts.shape == ts_hat.shape, "ts must have the same size of ts_hat"
 
         num = np.abs(ts-ts_hat)
-        den = np.abs(ts) + np.abs(ts_hat)
+        den = np.abs(ts) + np.abs(ts_hat) + 1e-10
         return 2*np.mean(num/den)
 
     def mase(self, ts_train, ts_test, ts_hat, frcy):
@@ -33,9 +33,15 @@ class FForma:
 
         rolled_train = np.roll(ts_train, frcy)
         diff_train = np.abs(ts_train - rolled_train)
-        den = diff_train[frcy:].mean()
+        den = diff_train[frcy:].mean() + 1e-10 #
 
         return np.abs(ts_test - ts_hat).mean()/den
+
+    def rmsle(self, ts_train, ts_test, ts_hat, frcy):
+
+        num = ((np.log(ts_test + 1) - np.log(ts_hat + 1))**2).mean()
+
+        return np.sqrt(num)
 
     # Train functions
     def train_basic(self, model, ts, frcy):
@@ -58,99 +64,91 @@ class FForma:
         return self
 
     def predict_basic_models(self, h):
-        y_hat = [
-            np.array([model.predict(h) for model in idts]) for idts in tqdm.tqdm(self.fitted_models)
-        ]
+        if not isinstance(h, list):
+            y_hat = [
+                np.array([model.predict(h) for model in idts]) for idts in tqdm.tqdm(self.fitted_models)
+            ]
+        else:
+            y_hat = [
+                np.array([model.predict(h[idh]) for model in idts]) for idh, idts in tqdm.tqdm(enumerate(self.fitted_models))
+            ]
 
         return y_hat
-    # Auxiliars for parallel calculate owa
-    def _particular_error(self, tuple_test_pred, fun):
-        ts_test_list, ts_pred_list = tuple_test_pred
-        list_error = [fun(ts_test_list, pred) for pred in ts_pred_list]
+    # # Auxiliars for parallel calculate owa
+    # def _particular_error(self, tuple_test_pred, fun):
+    #     ts_test_list, ts_pred_list = tuple_test_pred
+    #     list_error = [fun(ts_test_list, pred) for pred in ts_pred_list]
+    #
+    #     return np.array(list_error)
+    #
+    # def _particular_error_smape(self, tuple_test_pred):
+    #     return self._particular_error(tuple_test_pred, self.smape)
+    #
+    # def _simple_mase(self, ts_test, ts_hat):
+    #     return np.abs(ts_test - ts_hat).mean()
+    #
+    # def _particular_error_simple_mase(self, tuple_test_pred):
+    #     return self._particular_error(tuple_test_pred, self._simple_mase)
 
-        return np.array(list_error)
-
-    def _particular_error_smape(self, tuple_test_pred):
-        return self._particular_error(tuple_test_pred, self.smape)
-
-    def _simple_mase(self, ts_test, ts_hat):
-        return np.abs(ts_test - ts_hat).mean()
-
-    def _particular_error_simple_mase(self, tuple_test_pred):
-        return self._particular_error(tuple_test_pred, self._simple_mase)
-
-    def calculate_owa(self, ts_test_list, ts_hat_list, h, ts_train_list, frcy, parallel=True, threads=None, mult_preds=False):
+    def calculate_owa(
+            self, ts_train_list, ts_test_list, ts_hat_list,
+            ts_hat_naive2_list, frcy,
+            parallel=True, threads=None, mult_preds=False):
 
         #To calculate owa correctly when ts_hat_list contains a single prediction
         if not mult_preds:
             ts_hat_list = np.array([ts_hat_list])
+            ts_hat_naive2_list = np.array([ts_hat_naive2_list])
 
-        # init parallel
-        if parallel and threads is None:
-            threads = mp.cpu_count()
-
-        if parallel:
-            with mp.Pool(threads) as pool:
-
-                ts_test_hat_list = zip(ts_test_list, ts_hat_list)
-
-                smape_errors = np.array(pool.map(self._particular_error_smape, ts_test_hat_list))
-                mase_errors = np.array(pool.map(self._particular_error_simple_mase, ts_test_hat_list))
-                den_mase = np.array([np.abs(np.diff(ts)).sum()/(len(ts) -1) for ts in ts_train_list])
-                mase_errors = mase_errors/den_mase
+        # Smape
+        #smape_errors = np.array([
+        #    np.array(
+        #        [self.smape(ts_test, pred) for pred in ts_pred]
+        #    ) for ts_test, ts_pred in zip(ts_test_list, ts_hat_list)
+        #])
 
 
-                 ##### NAIVE2
-                # Training naive2
-                ts_hat_naive2 = [Naive2().fit(ts, frcy).predict(h) for ts in ts_train_list]
+        # Mase
+        #mase_errors = np.array([
+        #    np.array(
+        #        [self.mase(ts_train, ts_test, pred, frcy) for pred in ts_pred]
+        #    ) for ts_train, ts_test, ts_pred \
+        #    in zip(ts_train_list, ts_test_list, ts_hat_list)
+        #])
 
-                # Smape of naive2
-                mean_smape_naive2 = np.array([
-                     self.smape(ts_test, ts_pred) for ts_test, ts_pred in zip(ts_test_list, ts_hat_naive2)
-                ]).mean()
-
-                print(mean_smape_naive2)
-
-                # MASE of naive2
-                mean_mase_naive2 = np.array([
-                     self.mase(ts_train, ts_test, ts_pred) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_naive2)
-                ]).mean()
-
-                print(mean_mase_naive2)
-
-        else:
-
-            smape_errors = np.array([
-                np.array(
-                    [self.smape(ts_test, pred) for pred in ts_pred]
-                ) for ts_test, ts_pred in zip(ts_test_list, ts_hat_list)
-            ])
+        # Mase
+        rmsle_errors = np.array([
+            np.array(
+                [self.rmsle(ts_train, ts_test, pred, frcy) for pred in ts_pred]
+            ) for ts_train, ts_test, ts_pred \
+            in zip(ts_train_list, ts_test_list, ts_hat_list)
+        ])
 
 
-            # Mase
-            mase_errors = np.array([
-                np.array(
-                    [self.mase(ts_train, ts_test, pred) for pred in ts_pred]
-                ) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_list)
-            ])
+        # Smape of naive2
+        # mean_smape_naive2 = np.array([
+        #      self.smape(ts_test, ts_pred) for ts_test, ts_pred \
+        #      in zip(ts_test_list, ts_hat_naive2_list)
+        # ]).mean()
+        #
+        # # MASE of naive2
+        # mean_mase_naive2 = np.array([
+        #      self.mase(ts_train, ts_test, ts_pred, frcy) \
+        #      for ts_train, ts_test, ts_pred \
+        #      in zip(ts_train_list, ts_test_list, ts_hat_naive2_list)
+        # ]).mean()
 
-            ##### NAIVE2
-            # Training naive2
-            ts_hat_naive2 = [Naive2().fit(ts, frcy).predict(h) for ts in ts_train_list]
-
-            # Smape of naive2
-            mean_smape_naive2 = np.array([
-                 self.smape(ts_test, ts_pred) for ts_test, ts_pred in zip(ts_test_list, ts_hat_naive2)
-            ]).mean()
-
-            # MASE of naive2
-            mean_mase_naive2 = np.array([
-                 self.mase(ts_train, ts_test, ts_pred) for ts_train, ts_test, ts_pred in zip(ts_train_list, ts_test_list, ts_hat_naive2)
-            ]).mean()
+        mean_rmsle_naive2 = np.array([
+             self.rmsle(ts_train, ts_test, ts_pred, frcy) \
+             for ts_train, ts_test, ts_pred \
+             in zip(ts_train_list, ts_test_list, ts_hat_naive2_list)
+        ]).mean() + 1e-10
 
         # Contribution to the owa error
-        contribution_to_owa = (smape_errors/mean_smape_naive2) + (mase_errors/mean_mase_naive2)
-        contribution_to_owa = contribution_to_owa/2
+        # contribution_to_owa = (smape_errors/mean_smape_naive2) + \
+        #                       (mase_errors/mean_mase_naive2)
+        # contribution_to_owa = contribution_to_owa/2
+        contribution_to_owa = rmsle_errors/mean_rmsle_naive2
 
         return (contribution_to_owa.mean(), contribution_to_owa)
 
@@ -195,9 +193,9 @@ class FForma:
         return 'FFORMA-loss', fforma_loss
 
     def forec_methods(self):
-        return [Naive(), SeasonalNaive(), RandomWalkDrift(), ETS()]
+        return [Naive(), SeasonalNaive(), RandomWalkDrift(), ETS(), NonZeroMean(), Naive2()]
 
-    def _preprocess_train(self, ts_train_list, val_periods, h, frcy, models, save_file=None):
+    def _preprocess_train(self, ts_train_list, val_periods, h, frcy, models, save_file=None, parallel=True, threads=None):
         """
         Make all necessary preprocessing to train an fforma model.
         returns a dict
@@ -210,33 +208,46 @@ class FForma:
         #Number of models (number of classes for xgboost)
         dict_return['n_models'] = len(models)
         #Split in train/validation sets
-        train = [ts[:-val_periods] for ts in ts_train_list]
-        validation = [ts[-val_periods:] for ts in ts_train_list]
-        dict_return['train'] = train
-        dict_return['validation'] = validation
+        if val_periods<1: #Its  proportion
+            val_periods = [int(round(val_periods*len(ts))) for ts in ts_train_list]
+            train = [ts[:-val_periods[idv]] for idv, ts in enumerate(ts_train_list)]
+            validation = [ts[-val_periods[idv]:] for idv, ts in enumerate(ts_train_list)]
+            dict_return['train'] = train
+            dict_return['validation'] = validation
+        else:
+            train = [ts[:-val_periods] for ts in ts_train_list]
+            validation = [ts[-val_periods:] for ts in ts_train_list]
+            dict_return['train'] = train
+            dict_return['validation'] = validation
 
         print('Making predictions for validation set')
         preds_validation = self.train_basic_models(models, train, frcy).predict_basic_models(val_periods)
         dict_return['preds_validation'] = preds_validation
 
-        print('Making predictions for model')
+        print('Naive2 for validation set')
+        preds_validation_naive2 = self.train_basic_models([Naive2()], train, frcy).predict_basic_models(val_periods)
+        preds_validation_naive2 = np.array([pred[0] for pred in preds_validation_naive2])
+        dict_return['preds_validation_naive2'] = preds_validation_naive2
+
+        print('Making predictions for model with the entire train set')
         preds_h = self.train_basic_models(models, ts_train_list, frcy).predict_basic_models(h)
         dict_return['preds_h'] = preds_h
 
-        print('Calculating features')
-        train_feats = tsfeatures(train, frcy, parallel=True)
-        dict_return['train_feats'] = train_feats
+        print('Naive2 for model')
+        preds_h_naive2 = self.train_basic_models([Naive2()], ts_train_list, frcy).predict_basic_models(h)
+        preds_h_naive2 = np.array([pred[0] for pred in preds_h_naive2])
+        dict_return['preds_h_naive2'] = preds_h_naive2
 
-        print('Calculating complete features')
-        train_feats_complete = tsfeatures(ts_train_list, frcy, parallel=True)
-        dict_return['train_feats_complete'] = train_feats_complete
+        #print('Calculating features')
+        #train_feats = tsfeatures(train, frcy, parallel=True)
+        #dict_return['train_feats'] = train_feats
 
         print('Calculating contribution_to_owa with validation set')
-        (_, contribution_to_owa) = self.calculate_owa(
+        _, contribution_to_owa = self.calculate_owa(
+            train,
             validation,
             preds_validation,
-            val_periods,
-            train,
+            preds_validation_naive2,
             frcy,
             parallel=False,
             mult_preds=True
@@ -244,6 +255,12 @@ class FForma:
 
         dict_return['contribution_to_owa'] = contribution_to_owa
         dict_return['best_model'] = contribution_to_owa.argmin(axis=1)
+
+        print('Calculating complete features')
+        #print(ts_train_list)
+        train_feats_complete = tsfeatures(ts_train_list, frcy, parallel=False)#, threads=7)
+        dict_return['train_feats_complete'] = train_feats_complete
+
 
         if save_file is None:
             return dict_return
@@ -346,9 +363,9 @@ class FForma:
         X_train_xgb, X_val, y_train_xgb, \
             y_val, indices_train, \
             indices_val = train_test_split(
-                prep_dict['train_feats'],
+                prep_dict['train_feats_complete'],
                 prep_dict['best_model'],
-                np.arange(prep_dict['train_feats'].shape[0])
+                np.arange(prep_dict['train_feats_complete'].shape[0])
             )
 
         self.dtrain = xgb.DMatrix(data=X_train_xgb, label=indices_train)
@@ -385,7 +402,7 @@ class FForma:
             train_dict = pickle.load(read_file)
 
         xgb_ = train_dict['xgb']
-        ts_feats = xgb.DMatrix(train_dict['train_feats'])
+        ts_feats = xgb.DMatrix(train_dict['train_feats_complete'])
 
         preds = train_dict['preds_h']
         opt_weights = xgb_.predict(ts_feats)
